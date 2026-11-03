@@ -8,9 +8,16 @@ pub use labyrinth_macros::*;
 ///
 pub fn decrypt_string(encrypted: &str) -> String {
     let key = std::env::var("CRYPTIFY_KEY").unwrap_or_else(|_| "xnasff3wcedj".to_string());
-    encrypted
+    decrypt_string_with_key(encrypted, &key)
+}
+
+pub fn decrypt_string_with_key(encrypted: &str, key: &str) -> String {
+    let key = if key.is_empty() { "xnasff3wcedj" } else { key };
+    let bytes: Vec<u8> = encrypted
         .chars()
-        .zip(key.chars().cycle())
-        .map(|(encrypted_char, key_char)| ((encrypted_char as u8) ^ (key_char as u8)) as char)
-        .collect()
+        .map(|character| u8::try_from(character as u32).expect("invalid encrypted string"))
+        .zip(key.bytes().cycle())
+        .map(|(character, key_byte)| character ^ key_byte)
+        .collect();
+    String::from_utf8(bytes).expect("invalid decrypted string")
 }

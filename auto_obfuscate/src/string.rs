@@ -35,7 +35,6 @@ pub struct StringObfuscator {
     pub enabled: bool,
     #[allow(dead_code)]
     percentage: u8,
-    encrypted_count: usize,
     strings_to_encrypt: usize,
     num_strings_encrypted: usize,
 }
@@ -45,7 +44,6 @@ impl StringObfuscator {
         Self {
             enabled: config.enable_string_obfuscation,
             percentage: config.percentage,
-            encrypted_count: 0,
             strings_to_encrypt: 0,
             num_strings_encrypted: 0,
         }
@@ -92,8 +90,8 @@ impl StringObfuscator {
             ((self.percentage as f32) / 100.0) *
             (total_strings as f32)
         ).ceil() as usize;
-        self.encrypted_count = 0;
         self.strings_to_encrypt = strings_to_encrypt;
+        self.num_strings_encrypted = 0;
 
         let mut modified_ast = ast.clone();
         self.visit_file_mut(&mut modified_ast);
@@ -106,17 +104,14 @@ impl VisitMut for StringObfuscator {
     //replace all string literals with call to obfuscation macro
     fn visit_local_mut(&mut self, local: &mut Local) {
         if let Some(local_init) = &mut local.init {
-            if self.num_strings_encrypted >= self.strings_to_encrypt {
-                return;
-            }
-            self.num_strings_encrypted += 1;
-
-
-            //match on local variables that contain string literal assignments
             if let Expr::Lit(ExprLit { lit: Lit::Str(lit_str), .. }) = &*local_init.expr {
+                if self.num_strings_encrypted >= self.strings_to_encrypt {
+                    return;
+                }
                 let encrypted = quote! { cryptify::encrypt_string!(#lit_str) };
                 let new_expr: Expr = parse_quote!(#encrypted);
                 *local_init.expr = *Box::new(new_expr);
+                self.num_strings_encrypted += 1;
             }
         }
 
@@ -135,8 +130,13 @@ impl StringLiteralCounter {
 }
 
 impl<'ast> Visit<'ast> for StringLiteralCounter {
-    fn visit_lit_str(&mut self, _lit_str: &'ast LitStr) {
-        self.count += 1;
+    fn visit_local(&mut self, local: &'ast Local) {
+        if let Some(local_init) = &local.init {
+            if matches!(&*local_init.expr, Expr::Lit(ExprLit { lit: Lit::Str(_), .. })) {
+                self.count += 1;
+            }
+        }
+        syn::visit::visit_local(self, local);
     }
 }
 

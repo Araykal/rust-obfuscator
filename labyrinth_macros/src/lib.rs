@@ -72,11 +72,12 @@ pub fn encrypt_string(input: TokenStream) -> TokenStream {
 
     //set key to seeded env key or default
     let key = env::var("CRYPTIFY_KEY").unwrap_or_else(|_| "xnasff3wcedj".to_string());
+    let key = if key.is_empty() { "xnasff3wcedj" } else { &key };
 
-    let encrypted_string = xor_cipher(&string, &key);
+    let encrypted_string = xor_cipher(&string, key);
 
     let output = quote! {
-        cryptify::decrypt_string(#encrypted_string)
+        cryptify::decrypt_string_with_key(#encrypted_string, #key)
     };
 
     TokenStream::from(output)
@@ -84,9 +85,9 @@ pub fn encrypt_string(input: TokenStream) -> TokenStream {
 
 fn xor_cipher(input: &str, key: &str) -> String {
     input
-        .chars()
-        .zip(key.chars().cycle())
-        .map(|(input_char, key_char)| ((input_char as u8) ^ (key_char as u8)) as char)
+        .bytes()
+        .zip(key.bytes().cycle())
+        .map(|(input_byte, key_byte)| (input_byte ^ key_byte) as char)
         .collect()
 }
 
@@ -94,11 +95,14 @@ fn xor_cipher(input: &str, key: &str) -> String {
 #[allow(dead_code)]
 fn decrypt_string(encrypted: &str) -> String {
     let key = std::env::var("CRYPTIFY_KEY").unwrap_or_else(|_| "xnasff3wcedj".to_string());
-    encrypted
+    let key = if key.is_empty() { "xnasff3wcedj" } else { &key };
+    let bytes: Vec<u8> = encrypted
         .chars()
-        .zip(key.chars().cycle())
-        .map(|(encrypted_char, key_char)| ((encrypted_char as u8) ^ (key_char as u8)) as char)
-        .collect()
+        .map(|character| character as u8)
+        .zip(key.bytes().cycle())
+        .map(|(character, key_byte)| character ^ key_byte)
+        .collect();
+    String::from_utf8(bytes).expect("invalid decrypted string")
 }
 
 //unit tests testing decryption logic
@@ -110,7 +114,7 @@ mod tests {
     fn test_xor_cipher_and_decrypt() {
         std::env::remove_var("CRYPTIFY_KEY");
         let key = "xnasff3wcedj";
-        let test_strings = ["Hello", "World", "1234", "!@#$%^&*()"];
+        let test_strings = ["Hello", "World", "1234", "!@#$%^&*()", "你好，世界 🌙"];
 
         for &original in &test_strings {
             let encrypted = xor_cipher(original, &key);
